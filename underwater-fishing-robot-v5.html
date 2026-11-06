@@ -1,0 +1,357 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Underwater Fishing Robot</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0b4f72;color:#e8f6fb;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;user-select:none}
+canvas{display:block}
+.box{background:rgba(3,22,38,.82);border:1px solid #1d5a80;border-radius:10px;padding:10px 12px}
+#hud{position:absolute;left:12px;top:12px;width:230px;pointer-events:none}
+.lb{display:flex;justify-content:space-between;font-size:12px;color:#9cc7da;margin-top:7px}
+.bar{height:7px;background:#0c2b40;border-radius:4px;overflow:hidden;margin-top:3px}
+.bar i{display:block;height:100%;width:100%;background:#5be3a4}
+#msg{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+#fl{position:absolute;inset:0;background:radial-gradient(transparent 45%,rgba(255,40,40,.9));opacity:0;pointer-events:none}
+#tg{position:absolute;width:54px;height:54px;border:2px solid #7fe9ff;border-radius:6px;box-sizing:border-box;display:none;pointer-events:none}
+#ret{position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border:2px solid #7fe9ff;border-radius:50%;pointer-events:none}
+#fire{position:absolute;right:14px;bottom:14px;padding:14px 22px;border:0;border-radius:99px;background:#ffb347;color:#2b1700;font:700 16px system-ui;cursor:pointer}
+#ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,14,26,.8)}
+#ov .box{max-width:520px;margin:16px;padding:22px}
+h1{margin:0 0 6px;font-size:28px;letter-spacing:-.02em}
+#ov p,#ov li{color:#bcdcea}
+.go{margin-top:10px;padding:12px 24px;border:0;border-radius:99px;background:#ffb347;color:#2b1700;font:700 16px system-ui;cursor:pointer}
+.hid{display:none!important}
+</style></head><body>
+<div id="fl"></div>
+<div id="hud" class="box">
+<div class="lb"><span>Target</span><b id="tn"></b></div>
+<div class="lb"><span>Sonar lock</span><span id="lk"></span></div><div class="bar"><i id="lbar" style="background:#ffb347"></i></div>
+<div class="lb"><span>Hull</span><span id="hp"></span></div><div class="bar"><i id="hbar" style="background:#ff7a6b"></i></div>
+<div class="lb"><span>Battery</span><span id="bp"></span></div><div class="bar"><i id="bbar" style="background:#7fe9ff"></i></div>
+<div class="lb"><span>Nets</span><span id="nt"></span></div>
+<div class="lb"><span>Depth</span><span id="dp"></span></div>
+<div class="lb"><span>Safe depth</span><span id="sd"></span></div>
+<div class="lb"><span>Cash</span><span id="cs"></span></div>
+<div class="lb"><span>Motors</span><span id="mf"></span></div>
+<div id="hb2" class="hid"><div class="lb"><span>Net hold</span><span id="hv"></span></div><div class="bar"><i id="hbar2" style="background:#c6f7ff"></i></div></div>
+</div>
+<div id="msg" class="box"></div><div id="tg"></div><div id="ret"></div>
+<button id="fire">Fire net (Space)</button>
+<button id="sn" style="position:absolute;right:14px;bottom:76px;padding:12px 18px;border:0;border-radius:99px;background:#7fe9ff;color:#03202e;font:700 15px system-ui;cursor:pointer">Sonar (P)</button>
+<div id="ov"><div class="box" id="ovin">
+<h1>Underwater Fishing Robot</h1>
+<p><b>Detect • Catch • Return</b></p>
+<p>Find the target fish, lock the sonar, fire the net, then bring the fish back to the surface.</p>
+<ul><li>Sonar: keep the target in the cone and hold still until the lock bar fills.</li><li>Net: fire when the lock is full and the fish is close. Fish dodge, and sharks tear nets.</li><li>Surface: the net holds only while you move gently. Sharks bite, jellyfish sting, plastic fouls the motors. Buy upgrades after each mission to survive deeper dives.</li></ul>
+<p>W/S forward and back · A/D turn · E/Q up and down · P sonar · Space or click to fire</p>
+<p>Deep-sea creatures in the abyss pay well but bite back.</p>
+<button class="go" id="go">Start mission</button>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id),T=THREE;
+const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),rn=(a,b)=>a+Math.random()*(b-a),pick=a=>a[Math.random()*a.length|0],cl=(v,a,b)=>Math.min(b,Math.max(a,v));
+const scene=new T.Scene(),BG=0x0b4f72;scene.background=new T.Color(BG);scene.fog=new T.FogExp2(BG,.028);
+const cam=new T.PerspectiveCamera(60,1,.1,400),ren=new T.WebGLRenderer({antialias:true});
+ren.setPixelRatio(Math.min(devicePixelRatio,2));document.body.appendChild(ren.domElement);
+const rs=()=>{ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()};addEventListener('resize',rs);rs();
+const hemi=new T.HemisphereLight(0xbff1ff,0x0b3b52,1.1);scene.add(hemi);const lamp=new T.PointLight(0x9dffc8,0,30,1.1);scene.add(lamp);const C0=new T.Color(0x0b4f72),C1=new T.Color(0x010a14);
+const sun=new T.DirectionalLight(0xd8f7ff,.8);sun.position.set(20,50,10);scene.add(sun);
+const M=(c,o={})=>new T.MeshPhongMaterial(Object.assign({color:c,shininess:40},o));
+const alongZ=(g,d=1)=>(g.rotateX(d*Math.PI/2),g);
+const part=(g,m,x=0,y=0,z=0,sx=1,sy=1,sz=1)=>{const o=new T.Mesh(g,m);o.position.set(x,y,z);o.scale.set(sx,sy,sz);return o};
+const lathe=p=>new T.LatheGeometry(p.map(q=>new T.Vector2(q[0],q[1])),16);
+const kill=o=>{scene.remove(o);o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose()})};
+const gy=(x,z)=>-160+Math.sin(x*.09)*4+Math.cos(z*.07)*5+Math.sin((x+z)*.2)*1.5;
+
+// ---- world ----
+const fg=new T.PlaneGeometry(260,260,60,60).rotateX(-Math.PI/2),fp=fg.attributes.position;
+for(let i=0;i<fp.count;i++)fp.setY(i,gy(fp.getX(i),fp.getZ(i)));
+fg.computeVertexNormals();scene.add(new T.Mesh(fg,M(0x2a6266,{flatShading:true})));
+scene.add(new T.Mesh(new T.PlaneGeometry(400,400).rotateX(-Math.PI/2),new T.MeshBasicMaterial({color:0xbff1ff,transparent:true,opacity:.35,side:T.DoubleSide,depthWrite:false})));
+for(let i=0;i<9;i++){const b=new T.Mesh(new T.CylinderGeometry(1.5,5,32,10,1,true),new T.MeshBasicMaterial({color:0xcdf6ff,transparent:true,opacity:.05,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide}));b.position.set(rn(-50,50),-15,rn(-50,50));scene.add(b)}
+const pa=new Float32Array(2700);for(let i=0;i<900;i++){pa[i*3]=rn(-60,60);pa[i*3+1]=rn(-150,-1);pa[i*3+2]=rn(-60,60)}
+const pg=new T.BufferGeometry();pg.setAttribute('position',new T.BufferAttribute(pa,3));
+scene.add(new T.Points(pg,new T.PointsMaterial({color:0xcff7ff,size:.16,transparent:true,opacity:.5,depthWrite:false})));
+for(let i=0;i<30;i++){const x=rn(-55,55),z=rn(-55,55),r=new T.Mesh(new T.IcosahedronGeometry(rn(1.5,4),0),M(0x4d5f63,{flatShading:true}));r.position.set(x,gy(x,z)+.5,z);r.scale.y=.6;scene.add(r)}
+const kelp=[];for(let i=0;i<18;i++){const x=rn(-50,50),z=rn(-50,50),h=rn(7,13),g=new T.Group(),m=new T.Mesh(new T.CylinderGeometry(.1,.25,h,5),M(0x1f8a5a));g.position.set(x,gy(x,z),z);m.position.y=h/2;g.add(m);scene.add(g);kelp.push(g)}
+const bmat=new T.MeshBasicMaterial({color:0xe6fbff,transparent:true,opacity:.7}),bgeo=new T.SphereGeometry(.08,6,4),bubs=[];
+for(let i=0;i<50;i++){const m=new T.Mesh(bgeo,bmat);m.visible=false;scene.add(m);bubs.push({m,l:0,v:0})}
+let bi=0;const bubble=p=>{const b=bubs[bi++%50];b.m.visible=true;b.m.position.set(p.x+rn(-.2,.2),p.y,p.z+rn(-.2,.2));b.l=1.6;b.v=rn(1,2)};
+
+// ---- 3D models (built from shapes in code) ----
+function mkRobot(){
+ const g=new T.Group(),hull=M(0xdfeaf2,{shininess:90}),dark=M(0x2f5366);g.rotation.order='YXZ';
+ g.add(part(alongZ(lathe([[0,-1.2],[.36,-1.1],[.5,-.6],[.56,0],[.52,.7],[.4,1.05],[.22,1.18],[0,1.22]])),hull));
+ g.add(part(new T.SphereGeometry(.3,14,10),M(0x3aa8d8,{emissive:0x0a3550,transparent:true,opacity:.85}),0,0,1.05));
+ g.add(part(alongZ(new T.CylinderGeometry(.14,.14,1.1,10)),M(0xffb347),0,.52,.15));
+ const fl=part(new T.SphereGeometry(.45,14,10),M(0x5be3c4,{transparent:true,opacity:.9}),0,.5,-.5,.9,.45,1.4);g.add(fl);
+ for(const k of[-1,1])g.add(part(alongZ(new T.CylinderGeometry(.18,.18,.5,10)),dark,k*.5,-.25,-.2));
+ g.add(part(new T.BoxGeometry(.9,.06,.5),dark,0,0,-1.15));
+ g.add(part(new T.BoxGeometry(.06,.7,.5),dark,0,0,-1.15));
+ const pr=new T.Group();pr.position.z=-1.45;g.add(pr);
+ for(let i=0;i<3;i++){const b=part(new T.BoxGeometry(.08,.7,.04),dark);b.rotation.z=i*2.094;pr.add(b)}
+ const fb=part(new T.IcosahedronGeometry(.6,0),M(0xeaf6ff,{transparent:true,opacity:.6,flatShading:true}),0,.1,-1.5);fb.visible=false;g.add(fb);
+ return{g,fl,pr,fb};
+}
+function mkFish(b,f,s){
+ const g=new T.Group(),tp=new T.Group(),fm=M(f),bm=M(b);g.rotation.order='YXZ';
+ g.add(part(new T.SphereGeometry(1,14,10),bm,0,0,0,.42*s,.5*s,s));
+ tp.position.z=-.9*s;g.add(tp);tp.add(part(alongZ(new T.ConeGeometry(.5*s,.9*s,3),-1),fm,0,0,-.45*s,.25,1,1));
+ g.add(part(new T.ConeGeometry(.3*s,.5*s,3),fm,0,.45*s,-.1*s,.35,1,1));
+ for(const k of[-1,1]){g.add(part(new T.SphereGeometry(.1*s,8,6),M(0xffffff),k*.34*s,.12*s,.5*s));g.add(part(new T.SphereGeometry(.05*s,6,4),M(0x10202c),k*.37*s,.12*s,.58*s))}
+ return{g,tp,ph:rn(0,6)};
+}
+function mkShark(){
+ const g=new T.Group(),bm=M(0x5d7785),wh=M(0xeef4f6),tp=new T.Group(),jaw=new T.Group();g.rotation.order='YXZ';
+ g.add(part(alongZ(lathe([[0,-1.9],[.22,-1.7],[.42,-1.1],[.62,-.4],[.7,.4],[.6,1.1],[.36,1.6],[.1,1.9],[0,2]])),bm));
+ tp.position.z=-1.7;g.add(tp);tp.add(part(alongZ(new T.ConeGeometry(.7,1.2,3),-1),bm,0,0,-.6,.3,1,1));
+ g.add(part(new T.ConeGeometry(.55,1.1,3),bm,0,.85,.2,.3,1,1));
+ for(const k of[-1,1]){const pf=part(new T.BoxGeometry(1.1,.08,.5),bm,k*.7,-.45,.6);pf.rotation.z=k*.35;g.add(pf);g.add(part(new T.SphereGeometry(.1,8,6),M(0xff3b30,{emissive:0x551010}),k*.42,.35,1.25))}
+ jaw.position.set(0,-.5,.9);g.add(jaw);jaw.add(part(new T.BoxGeometry(.6,.14,1.1),wh,0,0,.55));
+ return{g,tp,jaw,ph:rn(0,6)};
+}
+function mkJelly(){
+ const g=new T.Group(),bell=part(new T.SphereGeometry(1.1,18,10,0,Math.PI*2,0,Math.PI/2),M(0xff8fd8,{transparent:true,opacity:.6,emissive:0x44112f,side:T.DoubleSide})),ten=[];
+ g.add(bell);
+ for(let i=0;i<8;i++){const a=i/8*Math.PI*2,pv=new T.Group();pv.position.set(Math.cos(a)*.8,-.1,Math.sin(a)*.8);pv.add(part(new T.CylinderGeometry(.03,.012,2.2,4),M(0xffc0ec,{emissive:0x331020}),0,-1.1,0));g.add(pv);ten.push(pv)}
+ return{g,bell,ten};
+}
+function mkDeep(c=0x2b2f36){
+ const g=new T.Group(),bm=M(c),jaw=new T.Group();g.rotation.order='YXZ';
+ g.add(part(alongZ(lathe([[0,-1.1],[.35,-.9],[.6,-.3],[.7,.3],[.6,.8],[.35,1.1],[0,1.25]])),bm));
+ jaw.position.set(0,-.35,.8);g.add(jaw);jaw.add(part(new T.BoxGeometry(.7,.16,.9),M(0x8a8f99),0,0,.45));
+ for(const x of[-.2,0,.2])jaw.add(part(new T.ConeGeometry(.05,.22,4),M(0xf2f2e8),x,.14,.5));
+ g.add(part(new T.CylinderGeometry(.03,.03,.7,6),bm,0,1.15,1));
+ g.add(part(new T.SphereGeometry(.16,10,8),M(0xffe27a,{emissive:0xffb300}),0,1.5,1.2));
+ return{g,jaw};
+}
+const SEA=[{n:'Abyssal comb jelly',a:'jelly',c:0xb8f0ff,s:1.2,v:420,d:10,p:1.5},{n:'Acorn worm',a:'worm',c:0xd9a066,s:1,v:380,d:8,p:2},{n:'Angler siphonophore',a:'worm',c:0xff8a5c,s:1.2,v:600,d:12,p:2.5},{n:'Armhook squid',a:'squid',c:0xc04a6a,s:1.3,v:650,d:18,p:5},{n:'Armored sea cucumber',a:'cucumber',c:0x7a5c4a,s:1,v:300,d:6,p:.8},{n:'Balloon worm',a:'worm',c:0xffd1e8,s:.9,v:350,d:8,p:1},{n:'Bamboo coral',a:'coral',c:0xe3a6ff,s:1.3,v:500,d:5,p:0},{n:'Barrel amphipod',a:'bug',c:0xffb84d,s:.7,v:260,d:6,p:3.5},{n:'Barreleye fish',a:'fish',c:0x9ad17a,s:1.1,v:550,d:14,p:3},{n:'Basket star',a:'star',c:0xf2c14e,s:1.2,v:520,d:10,p:1.2},{n:'Big red jelly',a:'jelly',c:0xff3b3b,s:1.8,v:480,d:16,p:1.8},{n:'Bigfin squid',a:'squid',c:0xa0c4ff,s:1.6,v:700,d:15,p:4.5},{n:'Bloody-belly comb jelly',a:'jelly',c:0x8a1c2b,s:1.1,v:450,d:9,p:1.6},{n:'Anglerfish',a:'fish',c:0x2b2f36,s:1.4,v:350,d:20,p:6}];
+function mkSea(sp){
+ if(sp.a==='fish'){const r=mkDeep(sp.c);r.g.scale.setScalar(sp.s);return r}
+ const g=new T.Group(),jaw=new T.Group(),m=M(sp.c,{emissive:new T.Color(sp.c).multiplyScalar(.2),transparent:sp.a==='jelly',opacity:.7});g.rotation.order='YXZ';
+ if(sp.a==='jelly'){g.add(part(new T.SphereGeometry(1,16,10,0,Math.PI*2,0,Math.PI/2),m));for(let i=0;i<8;i++){const a=i/8*Math.PI*2,pv=new T.Group();pv.position.set(Math.cos(a)*.6,-.05,Math.sin(a)*.6);pv.add(part(new T.CylinderGeometry(.04,.01,2.4,4),m,0,-1.2,0));g.add(pv)}}
+ else if(sp.a==='worm'){for(let i=0;i<7;i++)g.add(part(new T.SphereGeometry(.45-i*.04,10,8),m,0,0,.8-i*.55))}
+ else if(sp.a==='squid'){g.add(part(new T.SphereGeometry(1,12,10),m,0,0,0,.45,.5,1.3));for(const k of[-1,1])g.add(part(new T.BoxGeometry(.9,.06,.7),m,k*.5,0,.8));for(let i=0;i<8;i++){const a=i/8*Math.PI*2;g.add(part(alongZ(new T.CylinderGeometry(.04,.02,1.8,4)),m,Math.cos(a)*.2,Math.sin(a)*.2,-2.2))}}
+ else if(sp.a==='cucumber'){g.add(part(alongZ(new T.CylinderGeometry(.4,.4,2.4,12)),m));for(let i=0;i<6;i++)g.add(part(new T.SphereGeometry(.09,6,4),M(0xffe0a3),Math.cos(i*1.05)*.4,Math.sin(i*1.05)*.4,-.9+i*.36))}
+ else if(sp.a==='star'){g.add(part(new T.SphereGeometry(.45,12,8),m,0,0,0,1,.5,1));for(let i=0;i<5;i++){const a=i/5*Math.PI*2,arm=part(alongZ(new T.CylinderGeometry(.05,.02,2,4)),m,Math.cos(a)*1.2,0,Math.sin(a)*1.2);arm.rotation.y=Math.PI/2-a;g.add(arm)}}
+ else if(sp.a==='bug'){g.add(part(new T.SphereGeometry(.5,10,8),m,0,0,0,.9,.8,1.2));for(let i=0;i<6;i++)g.add(part(new T.CylinderGeometry(.03,.02,.7,4),m,i%2?.5:-.5,-.35,i<2?.5:i<4?0:-.5))}
+ else{for(let i=0;i<7;i++){const h=1.4+(i%3)*.4,t=part(new T.CylinderGeometry(.05,.08,h,5),m,Math.cos(i*.9)*.5,h/2,Math.sin(i*.9)*.5);t.rotation.z=Math.cos(i)*.3;g.add(t)}}
+ g.scale.setScalar(sp.s);return{g,jaw};
+}
+function deepUp(o,dt){
+ if(o.cap){o.g.position.copy(o.p);return}
+ o.cd=Math.max(0,o.cd-dt);
+ const dR=o.p.distanceTo(RB.p),hunt=G.run&&dR<(o.spd?12:3);let d=V();
+ if(hunt){d=RB.p.clone().sub(o.p).setLength(o.spd);if(dR<2.4&&o.cd<=0&&RB.inv<=0){G.hull=Math.max(0,G.hull-o.dmg);RB.v.add(RB.p.clone().sub(o.p).setLength(12));RB.inv=1;RB.spin=5;G.shake=.5;G.flash=.4;o.cd=3;say(o.n+' attacks! Hull -'+o.dmg)}}
+ else{if(o.p.distanceTo(o.tg)<3)o.tg.set(rn(-45,45),rn(-145,-110),rn(-40,40));d=o.tg.clone().sub(o.p).setLength(o.spd?1.5:0)}
+ o.v.lerp(d,1-Math.exp(-2*dt));o.p.addScaledVector(o.v,dt);
+ o.p.set(cl(o.p.x,-45,45),cl(o.p.y,-145,-110),cl(o.p.z,-40,40));
+ const h=Math.hypot(o.v.x,o.v.z);o.g.position.copy(o.p);o.g.rotation.set(-Math.atan2(o.v.y,h)*.5,Math.atan2(o.v.x,o.v.z),0);
+ o.jaw.rotation.x+=((hunt?.5:0)-o.jaw.rotation.x)*Math.min(1,dt*6);
+}
+function mkDebris(){return part(new T.IcosahedronGeometry(rn(.8,1.4),0),M(0xeaf6ff,{transparent:true,opacity:.55,flatShading:true,emissive:0x1a2a33}),0,0,0,1,rn(.5,.8),rn(.6,1))}
+
+// ---- state ----
+const SP=[{n:'Silver bass',b:0xc9d6df,f:0x8ea3b3,s:1},{n:'Golden carp',b:0xffb02e,f:0xe07a10,s:1.05},{n:'Red snapper',b:0xef5b4c,f:0xb83226,s:.95},{n:'Blue tang',b:0x4b93ff,f:0x2358b8,s:.85}];
+const RB={p:V(0,-6,-18),v:V(),yaw:0,roll:0,spin:0,inv:0},fwd=()=>V(Math.sin(RB.yaw),0,Math.cos(RB.yaw));
+const rob=mkRobot();scene.add(rob.g);
+const FISH=[],SHARK=[],JEL=[],DEB=[],DEEP=[],keys={};
+const tgeo=new T.BufferGeometry();tgeo.setAttribute('position',new T.BufferAttribute(new Float32Array(6),3));
+const tether=new T.Line(tgeo,new T.LineBasicMaterial({color:0xffc27a}));tether.frustumCulled=false;tether.visible=false;scene.add(tether);
+let G={t:0,run:false,mt:0};
+const spot=()=>{let p;do p=V(rn(-45,45),rn(-90,-4),rn(-40,40));while(p.distanceTo(RB.p)<14);return p};
+function say(s){$('msg').textContent=s;$('msg').style.opacity=1;G.mt=2.8}
+function killNet(){if(!G.net)return;scene.remove(G.net.m);G.net.m.geometry.dispose();G.net.m.material.dispose();G.net=null;tether.visible=false}
+
+// ---- catching ----
+function lockUp(dt){if(G.son>0){let nb=null,nd=24;for(const o of FISH){if(!o.isT||o.cap)continue;const L=o.p.distanceTo(RB.p);if(L<nd){nd=L;nb=o}}G.lk=nb;G.lock=nb?1:0;G.bat=Math.max(0,G.bat-5*dt);return}
+ const fw=fwd();let best=null,bc=.93;
+ for(const o of FISH.concat(DEEP)){if((!o.isT&&!o.deep)||o.cap)continue;const d=o.p.clone().sub(RB.p),L=d.length();if(L>16||L<.5)continue;const c=d.dot(fw)/L;if(c>bc){bc=c;best=o}}
+ G.lk=best;
+ G.lock=best?Math.min(1,G.lock+dt/1.2*(RB.v.length()<3?1:.35)):Math.max(0,G.lock-dt*3);
+}
+function doFire(){
+ if(!G.run||G.net||G.cap||G.rl>0||G.nets<=0||G.lock<1||!G.lk)return;
+ const f=G.lk,aim=f.p.clone().addScaledVector(f.v,RB.p.distanceTo(f.p)/22),dir=aim.clone().sub(RB.p).normalize();
+ const m=new T.Mesh(new T.SphereGeometry(1,12,8),new T.MeshBasicMaterial({color:0xffc27a,wireframe:true,transparent:true,opacity:.9}));
+ scene.add(m);
+ G.net={f,m,p:RB.p.clone().addScaledVector(fwd(),1.5),v:dir.multiplyScalar(22),tgt:aim,t:0,ph:0,r:1.2};
+ G.nets--;G.rl=3;G.lock=0;
+}
+function doSonar(){if(!G.run||G.son>0||G.sCD>0||G.bat<25)return;G.bat-=25;G.son=8;G.sCD=[45,32,22,14][PL.lv.sc||0];const rg=new T.Mesh(new T.RingGeometry(1,1.3,48),new T.MeshBasicMaterial({color:0x7fe9ff,transparent:true,opacity:.8,side:T.DoubleSide,depthWrite:false}));rg.rotation.x=-Math.PI/2;rg.position.copy(RB.p);scene.add(rg);G.ring={m:rg,t:0};say('Sonar on: target locked. Fire now!')}
+function resolve(N){
+ const f=N.f,d=N.p.distanceTo(f.p);
+ if(d<2.4&&f.al<=0&&Math.random()<(f.v.length()<3?.72:.3)){G.cap=f;f.cap=1;N.ph=2;N.r=1.6;G.hold=100;say('Fish inside the net. Surface slowly to keep it.')}
+ else{N.ph=3;N.r=2.4;say(d<2.4?'The fish dodged the net!':'Missed. Net coming back.')}
+}
+function spawnPlastic(){const m=mkDebris(),p=V(cl(RB.p.x+rn(-30,30),-50,50),cl(RB.p.y+rn(-12,12),-90,-.8),cl(RB.p.z+rn(-30,30),-45,45));m.position.copy(p);scene.add(m);DEB.push({m,p,v:V(rn(-.4,.4),rn(-.3,.1),rn(-.4,.4)),ph:rn(0,6),life:60})}
+function release(txt){if(G.cap){G.cap.cap=0;G.cap.al=4}G.cap=null;G.net.ph=3;G.net.r=2.4;say(txt)}
+function netUp(dt){
+ const N=G.net;if(!N)return;N.t+=dt;
+ if(N.ph===0){
+  N.p.addScaledVector(N.v,dt);
+  if(N.p.distanceTo(N.f.p)<6&&Math.random()<dt*1.2)N.f.al=1.6;
+  if(N.p.distanceTo(N.tgt)<1.5||N.t>1.1)resolve(N);
+ }else if(N.ph===2){
+  const f=G.cap,hp=RB.p.clone().addScaledVector(fwd(),1.7);hp.y-=.5;
+  f.p.lerp(hp,Math.min(1,dt*1.2));N.p.copy(f.p);
+  const sp=RB.v.length();
+  G.hold=Math.min(100,G.hold+(sp<1.5?6:-(3+sp*3))*dt);
+  if(Math.random()<dt*1.5)G.hold-=12;if(f.deep&&Math.random()<dt*2)G.hold-=15;
+  if(G.hold<=0)release('The fish slipped out of the net!');
+  else if(SHARK.some(s=>s.p.distanceTo(N.p)<2.2))release('A shark tore the net!');
+ }else{
+  const d=RB.p.clone().sub(N.p),L=d.length();
+  if(L<1.2){killNet();return}
+  N.p.addScaledVector(d,Math.min(1,30*dt/L));
+ }
+ N.m.position.copy(N.p);N.m.scale.setScalar(N.r);
+ const a=tgeo.attributes.position;a.setXYZ(0,RB.p.x,RB.p.y,RB.p.z);a.setXYZ(1,N.p.x,N.p.y,N.p.z);a.needsUpdate=true;tether.visible=true;
+}
+
+// ---- robot ----
+function robUp(dt){
+ const k=c=>keys[c]?1:0;
+ const turn=k('KeyA')+k('ArrowLeft')-k('KeyD')-k('ArrowRight'),thr=k('KeyW')+k('ArrowUp')-.5*(k('KeyS')+k('ArrowDown'));
+ RB.yaw+=turn*1.9*dt;
+ G.foul=Math.max(0,G.foul-dt);const th=1+.25*(PL.lv.th||0),fm=G.foul>0?.5:1;RB.v.addScaledVector(fwd(),thr*16*dt*th*fm);RB.v.y+=(k('KeyE')-k('KeyQ'))*9*dt*th*fm;
+ RB.v.multiplyScalar(Math.exp(-1.1*dt));
+ let sp=RB.v.length(),cap=12*th*fm;if(sp>cap){RB.v.multiplyScalar(cap/sp);sp=cap}
+ RB.p.addScaledVector(RB.v,dt);
+ RB.p.set(cl(RB.p.x,-55,55),cl(RB.p.y,-146,-.2),cl(RB.p.z,-55,55));
+ G.bat=Math.max(0,G.bat-(.35+sp*.4)*dt);G.rl=Math.max(0,G.rl-dt);G.son=Math.max(0,G.son-dt);G.sCD=Math.max(0,G.sCD-dt);
+ if(sp>.6&&Math.random()<dt*9)bubble(RB.p);
+ RB.roll+=RB.spin*dt;RB.spin*=Math.exp(-3*dt);RB.roll*=Math.exp(-2*dt);RB.inv=Math.max(0,RB.inv-dt);
+ G.shake=Math.max(0,G.shake-dt);G.flash=Math.max(0,G.flash-dt*1.5);
+ rob.g.position.copy(RB.p);rob.g.rotation.set(-cl(RB.v.y*.12,-.5,.5),RB.yaw,RB.roll);
+ rob.g.visible=!(RB.inv>0&&Math.floor(G.t*14)%2);
+ rob.pr.rotation.z+=dt*(6+sp*2)*(G.foul>0?.4:1);rob.fb.visible=G.foul>0;
+ rob.fl.scale.y+=((G.cap?1:.45)-rob.fl.scale.y)*Math.min(1,dt*3);
+}
+function bite(s){
+ G.hull=Math.max(0,G.hull-35);RB.v.add(RB.p.clone().sub(s.p).setLength(16));RB.spin=7;RB.inv=1;
+ G.shake=.6;G.flash=.5;s.v=s.p.clone().sub(RB.p).setLength(10);s.st=3;s.t=2;s.cd=3;say('Shark bite! Hull -35%');
+}
+function camUp(dt){const dz=cl(-RB.p.y/160,0,1)*(1-.3*(PL.lv.nv||0));lamp.position.copy(RB.p);lamp.intensity=(PL.lv.nv||0)*2.5;scene.fog.color.lerpColors(C0,C1,dz);scene.background.copy(scene.fog.color);scene.fog.density=.028+.03*dz;hemi.intensity=1.1*(1-.75*dz);sun.intensity=.8*(1-dz);
+ const f=fwd(),want=RB.p.clone().addScaledVector(f,-7.5);want.y+=2.6;
+ cam.position.lerp(want,1-Math.exp(-5*dt));
+ if(G.shake>0){cam.position.x+=rn(-.4,.4)*G.shake;cam.position.y+=rn(-.4,.4)*G.shake}
+ cam.lookAt(RB.p.clone().addScaledVector(f,4).add(V(0,.4,0)));
+}
+
+// ---- creatures ----
+function fishUp(o,dt){
+ if(o.cap){o.g.position.copy(o.p);return}
+ o.al=Math.max(0,o.al-dt);
+ if(G.run&&RB.v.length()>3&&o.p.distanceTo(RB.p)<7)o.al=Math.max(o.al,.6);
+ let d;
+ if(o.al>0)d=o.p.clone().sub(RB.p).setLength(8);
+ else{
+  if(o.p.distanceTo(o.tg)<2)o.tg.set(rn(-45,45),rn(-90,-4),rn(-40,40));
+  d=o.tg.clone().sub(o.p).setLength(o.spd);for(const q of FISH){if(q===o)continue;const dv=o.p.clone().sub(q.p),L=dv.length();if(L<6&&L>.01)d.addScaledVector(dv,(6-L)*.8/L)}
+ }
+ o.v.lerp(d,1-Math.exp(-2*dt));o.p.addScaledVector(o.v,dt);
+ o.p.set(cl(o.p.x,-45,45),cl(o.p.y,-90,-3),cl(o.p.z,-40,40));
+ const h=Math.hypot(o.v.x,o.v.z);o.g.position.copy(o.p);o.g.rotation.set(-Math.atan2(o.v.y,h)*.6,Math.atan2(o.v.x,o.v.z),0);
+ o.tp.rotation.y=Math.sin(G.t*o.spd*5+o.ph)*.4;
+}
+function sharkUp(s,dt){
+ s.cd=Math.max(0,s.cd-dt);
+ const dR=s.p.distanceTo(RB.p);let d=V();
+ if(s.st===0){
+  if(G.run&&dR<22&&s.cd<=0){s.st=1;s.t=.9}
+  else{if(s.p.distanceTo(s.tg)<3)s.tg.set(rn(-45,45),rn(-90,-4),rn(-40,40));d=s.tg.clone().sub(s.p).setLength(3.5)}
+ }
+ if(s.st===1){s.t-=dt;d=RB.p.clone().sub(s.p).setLength(2);if(s.t<=0){s.st=2;s.t=2.4;s.aim=RB.p.clone().addScaledVector(RB.v,.35)}}
+ if(s.st===2){s.t-=dt;d=s.aim.clone().sub(s.p).setLength(17);if(G.run&&dR<2.6&&RB.inv<=0)bite(s);else if(s.t<=0||s.p.distanceTo(s.aim)<1.5){s.st=3;s.t=2}}
+ if(s.st===3){s.t-=dt;d=s.p.clone().sub(RB.p).setLength(5);if(s.t<=0){s.st=0;s.cd=3}}
+ s.v.lerp(d,1-Math.exp(-(s.st===2?6:2)*dt));
+ s.p.addScaledVector(s.v,dt);s.p.set(cl(s.p.x,-45,45),cl(s.p.y,-90,-4),cl(s.p.z,-40,40));
+ const h=Math.hypot(s.v.x,s.v.z);s.g.position.copy(s.p);s.g.rotation.set(-Math.atan2(s.v.y,h)*.5,Math.atan2(s.v.x,s.v.z),0);
+ s.tp.rotation.y=Math.sin(G.t*9+s.ph)*.5;
+ s.jaw.rotation.x+=((s.st===1||s.st===2?.6:0)-s.jaw.rotation.x)*Math.min(1,dt*8);
+}
+function jelUp(j,dt){
+ j.cd=Math.max(0,j.cd-dt);j.st=Math.max(0,j.st-dt);
+ if(G.run){const dx=RB.p.x-j.base.x,dz=RB.p.z-j.base.z,dd=Math.hypot(dx,dz);if(dd<9&&dd>.1){j.base.x+=dx/dd*1.1*dt;j.base.z+=dz/dd*1.1*dt}}
+ j.g.position.set(j.base.x,j.base.y+Math.sin(G.t*.6+j.ph)*1.2,j.base.z);
+ j.bell.scale.y=1+.16*Math.sin(G.t*3.4+j.ph)+(j.st>0?.25:0);
+ j.ten.forEach((t,i)=>{t.rotation.x=Math.sin(G.t*2+i*.8+j.ph)*.25+(j.st>0?.9:0);t.rotation.z=Math.cos(G.t*1.7+i)*.2});
+ const c=j.g.position;
+ if(G.run&&j.cd<=0&&RB.inv<=0&&RB.p.distanceTo(c)<2.4){
+  G.hull=Math.max(0,G.hull-12);G.bat=Math.max(0,G.bat-6);
+  RB.v.add(RB.p.clone().sub(c).setLength(7));RB.inv=.8;RB.spin=3;
+  j.cd=1.8;j.st=.7;G.flash=.25;G.shake=.25;say('Jellyfish sting! Hull -12%');
+ }
+}
+
+// ---- mission flow ----
+function reset(){
+ FISH.forEach(o=>kill(o.g));SHARK.forEach(o=>kill(o.g));JEL.forEach(o=>kill(o.g));DEB.forEach(o=>kill(o.m));
+ DEEP.forEach(o=>kill(o.g));DEEP.length=0;FISH.length=SHARK.length=JEL.length=DEB.length=0;killNet();
+ const TG=pick(SP);
+ G={t:0,run:false,mt:0,tg:TG,hull:100,maxHull:100,rate:30,foul:0,spawnT:2,reward:0,warned:false,dmax:0,son:0,sCD:0,bat:100,nets:3,rl:0,lock:0,lk:null,net:null,cap:null,hold:100,shake:0,flash:0};
+ RB.p.set(0,-6,-18);RB.v.set(0,0,0);RB.yaw=0;RB.roll=0;RB.spin=0;RB.inv=0;
+ for(let i=0;i<14;i++){const sp=i<4?TG:pick(SP),m=mkFish(sp.b,sp.f,sp.s);FISH.push({g:m.g,tp:m.tp,ph:m.ph,isT:sp===TG,p:spot(),v:V(),tg:V(),al:0,cap:0,spd:rn(2,3)});scene.add(m.g)}
+ for(let i=0;i<2;i++){const s=mkShark();SHARK.push({g:s.g,tp:s.tp,jaw:s.jaw,ph:s.ph,p:spot(),v:V(),tg:spot(),aim:V(),st:0,t:rn(0,3),cd:0});scene.add(s.g)}
+ for(let i=0;i<SEA.length;i++){const m=mkSea(SEA[i]);DEEP.push({n:SEA[i].n,val:SEA[i].v,dmg:SEA[i].d,spd:SEA[i].p,g:m.g,jaw:m.jaw,p:V(rn(-45,45),rn(-145,-110),rn(-40,40)),v:V(),tg:V(rn(-45,45),-130,rn(-40,40)),cd:0,cap:0,al:0,deep:1});scene.add(m.g)}
+for(let i=0;i<5;i++){const j=mkJelly();JEL.push({g:j.g,bell:j.bell,ten:j.ten,base:spot(),ph:rn(0,6),cd:0,st:0});scene.add(j.g)}
+ 
+}
+const PL={cash:0,hull:100,lv:{pr:0,ti:0,mg:0,th:0}};
+let SH={};
+const UP={pr:{n:'Pressure hull',d:'+25 m safe depth',c:[300,600,1000,1500,2200]},ti:{n:'Titanium plating',d:'+25 max hull and repairs 25',c:[250,500,900]},mg:{n:'Motor guard',d:'Plastic fouling lasts less',c:[200,450]},th:{n:'Thrusters',d:'+25% thrust and top speed',c:[250,500,800]},rp:{n:'Hull repair',d:'Repairs 40 hull',c:[120],rep:1},sc:{n:'Sonar cooler',d:'Shorter sonar cooldown',c:[200,400,700]},nv:{n:'Night vision',d:'Brighter, clearer deep water and a light around the robot',c:[300,600]}};
+const maxH=()=>100+25*(PL.lv.ti||0);
+function showShop(win,txt,sc){
+ SH={win,txt,sc};
+ const rows=Object.keys(UP).map(k=>{const U=UP[k],l=PL.lv[k]||0,c=U.rep?U.c[0]:U.c[l],mx=!U.rep&&c===undefined;return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0"><span><b>${U.n}</b>${mx?' · owned':' · $'+c}<br><small style="color:#8fb4c8">${U.d}</small></span><button class="go" style="margin:0;padding:8px 14px;font-size:13px" data-k="${k}" ${mx||PL.cash<c?'disabled':''}>${mx?'Max':'Buy'}</button></div>`}).join('');
+ $('ovin').innerHTML=`<h1>${win?'Mission completed':'Mission failed'}</h1><p>${win?'The robot reaches the surface with the '+G.tg.n.toLowerCase()+'.':txt}</p>${win?'<p>Reward $'+G.reward+' · Deepest '+Math.round(G.dmax)+' m · Score '+sc+'</p>':''}<p><b>Cash $${PL.cash} · Hull ${Math.round(PL.hull)}/${maxH()} · Safe depth ${30+25*(PL.lv.pr||0)} m</b></p><div style="max-height:40vh;overflow:auto">${rows}</div><button class="go" id="go">Next mission</button>`;
+}
+function buy(k){const U=UP[k],l=PL.lv[k]||0,c=U.rep?U.c[0]:U.c[l];if(c===undefined||PL.cash<c||(U.rep&&PL.hull>=maxH()))return;PL.cash-=c;if(U.rep)PL.hull=Math.min(maxH(),PL.hull+40);else{PL.lv[k]=l+1;if(k==='ti')PL.hull=Math.min(maxH(),PL.hull+25)}showShop(SH.win,SH.txt,SH.sc)}
+function begin(){reset();G.run=true;G.maxHull=maxH();G.hull=Math.min(PL.hull,G.maxHull);G.rate=30+25*(PL.lv.pr||0);$('ov').classList.add('hid')}
+function end(win,txt=''){
+ G.run=false;killNet();
+ const sc=Math.round(1000+G.hull*10+G.bat*5+Math.max(0,240-G.t)*4);
+ $('ovin').innerHTML=`<h1>${win?'Mission completed':'Mission failed'}</h1><p>${win?'The robot reaches the surface with the '+G.tg.n.toLowerCase()+'. It can now be moved to the collection container, and the robot is ready for another mission.':txt}</p>${win?'<p>Score '+sc+' · Time '+Math.round(G.t)+' s · Hull '+Math.round(G.hull)+'% · Battery '+Math.round(G.bat)+'%</p>':''}<button class="go" id="go">${win?'Play again':'Try again'}</button>`;
+ $('ov').classList.remove('hid');G.reward=win?200+Math.round(G.dmax*4):0;PL.cash+=G.reward;PL.hull=win?G.hull:Math.round(G.maxHull*.5);showShop(win,txt,sc);
+}
+function checks(){
+ if(G.cap&&RB.p.y>-1.2){if(G.cap.deep){const c=G.cap,b=c.val+Math.round(G.dmax*2);PL.cash+=b;G.cap=null;G.net.ph=3;G.net.r=2.4;kill(c.g);DEEP.splice(DEEP.indexOf(c),1);say(c.n+' sold: +$'+b)}else end(true)}
+ else if(G.hull<=0)end(false,-RB.p.y>G.rate?'Crushed by the depths. Buy a pressure hull upgrade.':'Hull destroyed by sharks, jellyfish or plastic.');
+ else if(G.bat<=0)end(false,'The battery ran out.');
+ else if(G.nets<=0&&!G.net&&!G.cap)end(false,'No nets left.');
+}
+function step(dt){
+ G.t+=dt;
+ if(G.run){robUp(dt);lockUp(dt);G.dmax=Math.max(G.dmax,-RB.p.y);const over=-RB.p.y-G.rate;if(over>0){G.hull=Math.max(0,G.hull-over*.35*dt);G.flash=Math.max(G.flash,.12);if(!G.warned){G.warned=true;say('Hull groaning under pressure. Surface, or buy a pressure upgrade.')}}}
+ FISH.forEach(o=>fishUp(o,dt));SHARK.forEach(o=>sharkUp(o,dt));JEL.forEach(o=>jelUp(o,dt));DEEP.forEach(o=>deepUp(o,dt));
+ G.spawnT-=dt;if(G.run&&G.spawnT<=0&&DEB.length<12){spawnPlastic();G.spawnT=rn(2.5,4.5)}DEB.forEach(o=>{o.life-=dt;o.p.addScaledVector(o.v,dt);o.m.position.copy(o.p);o.m.rotation.set(G.t*.5+o.ph,G.t*.3,0);
+  if(G.run&&RB.p.distanceTo(o.p)<2.2){G.hull=Math.max(0,G.hull-6);G.foul=Math.max(G.foul,6*[1,.6,.35][PL.lv.mg||0]);RB.v.multiplyScalar(.6);G.flash=.15;o.life=0;say('Plastic tangled in the motors. Hull -6, thrust down')}});for(let i=DEB.length-1;i>=0;i--)if(DEB[i].life<=0){kill(DEB[i].m);DEB.splice(i,1)}
+ if(G.run){netUp(dt);checks()}
+ kelp.forEach((k,i)=>k.rotation.z=Math.sin(G.t*1.1+i)*.08);
+ bubs.forEach(b=>{if(b.l>0){b.l-=dt;b.m.position.y+=b.v*dt;b.m.visible=b.l>0}});
+ if(G.ring){G.ring.t+=dt;const s=1+G.ring.t*40;G.ring.m.position.copy(RB.p);G.ring.m.scale.set(s,s,s);G.ring.m.material.opacity=Math.max(0,.8-G.ring.t*.8);if(G.ring.t>1){scene.remove(G.ring.m);G.ring=null}}
+ if(G.mt>0){G.mt-=dt;if(G.mt<=0)$('msg').style.opacity=0}
+}
+function drawHud(){
+ const t=$('tg'),f=G.lk;
+ $('tn').textContent=G.tg.n;
+ $('lk').textContent=f?Math.round(G.lock*100)+'%':'no target in cone';
+ $('lbar').style.width=G.lock*100+'%';
+ $('hp').textContent=Math.round(G.hull);$('hbar').style.width=(G.hull/G.maxHull*100)+'%';
+ $('bp').textContent=Math.round(G.bat);$('bbar').style.width=G.bat+'%';
+ $('nt').textContent=G.nets+(G.rl>0?'  reload '+G.rl.toFixed(1)+' s':'');
+ $('dp').textContent=Math.max(0,Math.round(-RB.p.y))+' m';$('sd').textContent=G.rate+' m';$('cs').textContent='$'+PL.cash;$('mf').textContent=G.foul>0?'FOULED':'OK';$('sn').textContent=G.son>0?'SONAR ON '+Math.ceil(G.son)+'s':G.sCD>0?'Sonar in '+Math.ceil(G.sCD)+'s':'Sonar (P)';
+ $('hb2').classList.toggle('hid',!G.cap);
+ if(G.cap){$('hv').textContent=Math.round(G.hold);$('hbar2').style.width=G.hold+'%'}
+ $('fl').style.opacity=G.flash*1.4;
+ if(f&&G.run){const v=f.p.clone().project(cam);t.style.display=v.z<1?'block':'none';t.style.left=((v.x*.5+.5)*innerWidth-27)+'px';t.style.top=((-v.y*.5+.5)*innerHeight-27)+'px';t.style.borderColor=G.lock>=1?'#ffb347':'#7fe9ff'}
+ else t.style.display='none';
+}
+let last=performance.now();
+const loop=now=>{const dt=Math.min(.05,(now-last)/1000);last=now;step(dt);camUp(dt);drawHud();ren.render(scene,cam);requestAnimationFrame(loop)};
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Space'||e.code.startsWith('Arrow'))e.preventDefault();if(e.code==='Space'&&!e.repeat)doFire();if(e.code==='KeyP'&&!e.repeat)doSonar()});
+addEventListener('keyup',e=>{keys[e.code]=0});
+$('fire').onclick=()=>doFire();$('sn').onclick=()=>doSonar();
+ren.domElement.onpointerdown=()=>doFire();
+$('ov').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='go')begin();else if(b.dataset.k)buy(b.dataset.k)};
+reset();requestAnimationFrame(loop);
+</script></body></html>
